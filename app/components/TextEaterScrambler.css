@@ -1,0 +1,39 @@
+.te-container {
+  font-family: ui-monospace, SFMono-Regular, Menlo, Monaco, "Roboto Mono",
+    "Courier New", monospace;
+  font-size: 14px;
+  line-height: 1.2;
+  white-space: pre;
+  display: inline-block;
+  color: #000000;
+  background-color: #ffffff;
+}
+
+.te-line {
+  display: block;
+  transition: transform 2000ms ease-out;
+}
+
+.te-line.te-scrambling,
+.te-line.te-scrambled {
+  animation: lineSlideX 3000ms ease-out forwards;
+}
+
+@keyframes lineSlideX {
+  0% {
+    transform: translateX(0);
+  }
+  100% {
+    transform: translateX(0);
+  }
+}
+
+.te-text {
+  display: inline-block;
+}
+
+.te-hiding,
+.te-hidden {
+  opacity: 0;
+  pointer-events: none;
+}
