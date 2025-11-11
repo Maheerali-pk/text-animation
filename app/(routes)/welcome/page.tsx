@@ -25,8 +25,10 @@ const Welcome: FunctionComponent<WelcomeProps> = () => {
   }
 
   return (
-    <div className="w-screen h-screen flex items-center justify-center">
-      <AnimatedFrog />
+    <div className="w-screen h-screen flex items-center justify-center overflow-hidden">
+      <div className="frog-container">
+        <AnimatedFrog />
+      </div>
     </div>
   );
 };

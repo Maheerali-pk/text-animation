@@ -8,6 +8,52 @@
   background-color: #ffffff;
 }
 
+/* Mobile responsive styles */
+.frog-container {
+  width: 100%;
+  height: 100%;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  overflow: hidden;
+  position: relative;
+}
+
+/* Desktop: center the frog normally */
+@media (min-width: 768px) {
+  .frog-container {
+    /* Desktop behavior - no changes needed */
+  }
+}
+
+/* Mobile portrait: full width and height, show only left half */
+@media (max-width: 767px) and (orientation: portrait) {
+  .frog-container {
+    align-items: center;
+    justify-content: flex-start;
+    width: 100vw;
+    height: 100vh;
+    overflow: hidden;
+    position: relative;
+    /* Clip to show only left 50% - left side takes full width */
+    /* clip-path: inset(0 50% 0 0);
+    -webkit-clip-path: inset(0 50% 0 0); */
+  }
+
+  .te-container {
+    /* Make frog 2x width so left half fills screen width */
+    width: 200vw;
+    font-size: 1.4vh;
+    min-width: 200vw;
+
+    position: relative;
+    /* Scale to fill full height like desktop */
+    height: auto;
+    /* Position at left edge so left half is visible */
+    transform: translateX(-118px);
+  }
+}
+
 .te-line {
   display: block;
   transition: transform 4000ms ease-out;
