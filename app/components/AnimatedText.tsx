@@ -3,13 +3,13 @@
 import React, {
   useCallback,
   useEffect,
+  useLayoutEffect,
   useMemo,
   useRef,
   useState,
 } from "react";
 import "./TextEaterScrambler.css"; // CSS below
-import { ILine, ILineItem } from "../page";
-
+import { ILine, ILineItem } from "../types/animation";
 const CHSET =
   "ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz0123456789@#$%&*()[]{}<>/\\|";
 
@@ -24,7 +24,7 @@ function TextLine({
   text,
   lineItems,
   scrambleDuration = 800,
-  charDelay = 2,
+  charDelay = 4,
   startDelay = 0,
   reconstructionStartDelay = 0,
   cycle = 0,
@@ -149,34 +149,91 @@ function TextLine({
   const shouldUseColorsInReconstruction = cycle % 2 === 0;
 
   // Use colored rendering based on phase and cycle
+  // Include "idle" phase when colors should be used during destruction to prevent black flash
   const shouldUseColoredRendering =
     ((phase === "reappearing" || phase === "reconstructed") &&
       shouldUseColorsInReconstruction) ||
-    ((phase === "scrambling" || phase === "scrambled") &&
+    ((phase === "idle" || phase === "scrambling" || phase === "scrambled") &&
       shouldUseColorsInDestruction);
 
   // Update colored segments when state changes
-  useEffect(() => {
-    if (shouldUseColoredRendering) {
-      const segments = buildColoredDisplayText(
-        scrambledCharsRef.current,
-        hiddenCharsRef.current
-      );
-      setColoredSegments(segments);
-    } else {
+  // This ensures colored segments are always in sync with the current state
+  // Note: displayText is NOT in dependencies because the effect uses refs, not displayText directly
+  // Including displayText causes flicker when destruction starts due to redundant updates
+  // Use useLayoutEffect to update synchronously before paint to prevent flicker
+  useLayoutEffect(() => {
+    // During reconstruction, always update colored segments if colors should be used
+    if (phase === "reappearing" || phase === "reconstructed") {
+      if (shouldUseColorsInReconstruction) {
+        const segments = buildColoredDisplayText(
+          scrambledCharsRef.current,
+          hiddenCharsRef.current
+        );
+        setColoredSegments(segments);
+      } else {
+        setColoredSegments([]);
+      }
+    }
+    // During destruction, update colored segments if colors should be used
+    // This ensures colors are maintained even during phase transitions
+    else if (phase === "scrambling" || phase === "scrambled") {
+      if (shouldUseColorsInDestruction) {
+        const segments = buildColoredDisplayText(
+          scrambledCharsRef.current,
+          hiddenCharsRef.current
+        );
+        setColoredSegments(segments);
+      } else {
+        setColoredSegments([]);
+      }
+    }
+    // For idle phase, set colored segments if colors should be used during destruction
+    else if (phase === "idle") {
+      if (shouldUseColorsInDestruction) {
+        const segments = buildColoredDisplayText(
+          scrambledCharsRef.current,
+          hiddenCharsRef.current
+        );
+        setColoredSegments(segments);
+      } else {
+        setColoredSegments([]);
+      }
+    }
+    // For other phases, clear colored segments
+    else {
       setColoredSegments([]);
     }
-  }, [phase, displayText, lineItems, cycle, shouldUseColoredRendering]);
+  }, [
+    phase,
+    lineItems,
+    cycle,
+    shouldUseColorsInDestruction,
+    shouldUseColorsInReconstruction,
+  ]);
 
   useEffect(() => {
     // Reset state
-    setPhase("idle");
-    setDisplayText(text);
-    setColoredSegments([]);
     scrambledCharsRef.current.clear();
     hiddenCharsRef.current.clear();
     charsThatScrambledRef.current.clear();
     charsThatDisappearedRef.current.clear();
+
+    // Set initial colored segments if colors should be used during destruction
+    // This prevents the black flash before destruction starts
+    // The useLayoutEffect will handle updates when phase changes
+    if (shouldUseColorsInDestruction) {
+      const initialSegments = buildColoredDisplayText(
+        scrambledCharsRef.current,
+        hiddenCharsRef.current
+      );
+      setColoredSegments(initialSegments);
+    } else {
+      setColoredSegments([]);
+    }
+
+    // Set phase and displayText after colored segments are set
+    setPhase("idle");
+    setDisplayText(text);
 
     // Clear any existing timers
     charTimerRefs.current.forEach((timer) => clearTimeout(timer));
@@ -241,7 +298,7 @@ function TextLine({
       charTimerRefs.current.push(phase1Timer);
 
       // Phase 2: Change scrambled characters to original (after brief delay)
-      const phase2Delay = 50; // Shorter delay to show scrambled text
+      const phase2Delay = 100; // Shorter delay to show scrambled text
       const phase2Timer = setTimeout(() => {
         // Batch all updates: remove from scrambled
         charsToScrambleFirst.forEach((charIndex) => {
@@ -268,7 +325,7 @@ function TextLine({
       charTimerRefs.current.push(phase2Timer);
 
       // Phase 3: Show remaining 85% as original directly
-      const phase3Delay = phase2Delay + 30; // Smaller gap
+      const phase3Delay = phase2Delay + 60; // Smaller gap
       const phase3Timer = setTimeout(() => {
         // Batch all updates: remove from hidden
         charsToAppearDirectly.forEach((charIndex) => {
@@ -326,23 +383,16 @@ function TextLine({
       charsThatDisappearedRef.current = new Set(charsToHide);
       charsThatScrambledRef.current.clear();
 
-      setPhase("scrambling");
       // Update display immediately with hidden characters
       const initialText = buildDisplayText(
         scrambledCharsRef.current,
         charsToHide
       );
+
+      // Update state - useLayoutEffect will handle coloredSegments update synchronously
+      // This ensures a single update path and prevents flicker
       setDisplayText(initialText);
-      // Update colored segments if needed during destruction
-      if (shouldUseColorsInDestruction) {
-        const segments = buildColoredDisplayText(
-          scrambledCharsRef.current,
-          hiddenCharsRef.current
-        );
-        setColoredSegments(segments);
-      } else {
-        setColoredSegments([]);
-      }
+      setPhase("scrambling");
 
       // Phase 1: Scramble remaining characters one by one (70% disappear immediately, 30% scramble character-by-character)
       // After the loop, 'indices' contains only the indices that were NOT selected to hide (and are non-empty)
@@ -375,20 +425,30 @@ function TextLine({
             scrambledCharsRef.current,
             hiddenCharsRef.current
           );
-          setDisplayText(newText);
-          // Update colored segments if needed during destruction
+          // Update colored segments if needed during destruction (before setDisplayText to ensure they update together)
           if (shouldUseColorsInDestruction) {
             const segments = buildColoredDisplayText(
               scrambledCharsRef.current,
               hiddenCharsRef.current
             );
+            // Use React's batching to update both states together
             setColoredSegments(segments);
+            setDisplayText(newText);
           } else {
             setColoredSegments([]);
+            setDisplayText(newText);
           }
 
           // If this is the last character to scramble, hide immediately
           if (index === charsToScramble.length - 1) {
+            // Ensure colored segments are still set before phase change
+            if (shouldUseColorsInDestruction) {
+              const finalSegments = buildColoredDisplayText(
+                scrambledCharsRef.current,
+                hiddenCharsRef.current
+              );
+              setColoredSegments(finalSegments);
+            }
             setPhase("scrambled");
             // Hide immediately after last character scrambles
             setTimeout(() => {
@@ -455,10 +515,10 @@ function TextLine({
  *  - scrambleDuration: ms to show scrambled text before hiding (default 800)
  *  - lineDelay: base ms delay between each line's animation start (default 10)
  */
-export default function TextEaterScrambler({
+export default function AnimatedText({
   text,
   scrambleDuration = 800,
-  lineDelay = 10,
+  lineDelay = 20,
 }: {
   text: ILine[];
   scrambleDuration?: number;
@@ -492,7 +552,7 @@ export default function TextEaterScrambler({
     )
   );
   const charsToScramblePerLine = Math.floor(maxCharsInLine * 0.3); // 30% scramble
-  const charDelay = 2; // Match the default charDelay in TextLine
+  const charDelay = 4; // Match the default charDelay in TextLine
   const maxDestructionDuration = charsToScramblePerLine * charDelay * 3 + 10; // charDelay * 3 + hide delay
   const lastLineStartDelay = calculateDelay(lines.length - 1, lines.length);
   // Base reconstruction start time (after last line finishes destruction)
@@ -507,7 +567,7 @@ export default function TextEaterScrambler({
   const lastReconstructionDelay = calculateReconstructionDelay(
     lines.length - 1
   );
-  const reconstructionDuration = 200; // Approximate duration for reconstruction phases
+  const reconstructionDuration = 400; // Approximate duration for reconstruction phases
   const totalCycleDuration = lastReconstructionDelay + reconstructionDuration;
 
   // Handle reconstruction completion for a line
@@ -531,7 +591,7 @@ export default function TextEaterScrambler({
           // Increment cycle to start next iteration
           setCycle((prev) => prev + 1);
           restartTimerRef.current = null;
-        }, 300); // Brief pause before restarting
+        }, 600); // Brief pause before restarting
       }
     },
     [lines.length]

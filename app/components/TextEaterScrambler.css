@@ -10,12 +10,12 @@
 
 .te-line {
   display: block;
-  transition: transform 2000ms ease-out;
+  transition: transform 4000ms ease-out;
 }
 
 .te-line.te-scrambling,
 .te-line.te-scrambled {
-  animation: lineSlideX 3000ms ease-out forwards;
+  animation: lineSlideX 6000ms ease-out forwards;
 }
 
 @keyframes lineSlideX {
