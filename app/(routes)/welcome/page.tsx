@@ -14,14 +14,16 @@ const Welcome: FunctionComponent<WelcomeProps> = () => {
       }, 750 * 6);
     }
   }, [clickedOnce]);
+  useEffect(() => {
+    if (!clickedOnce) {
+      setTimeout(() => {
+        setClickedOnce(true);
+      }, 600);
+    }
+  }, []);
 
   if (!clickedOnce) {
-    return (
-      <div
-        onClick={() => setClickedOnce(true)}
-        className="w-screen h-screen"
-      ></div>
-    );
+    return <div className="w-screen h-screen"></div>;
   }
 
   return (
