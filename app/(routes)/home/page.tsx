@@ -9,7 +9,7 @@ const TypeAnimationTime = 1000;
 const TextToType = "This is an experimental project. More details to follow.";
 const MsForEachCharacter = TypeAnimationTime / TextToType.length;
 
-const characters = ["#", "$", "_", "5", "o", "a", "d"];
+const characters = ["#", "$", "_", "5", "&", "!", "@", "o", "a", "d"];
 
 const Home: FunctionComponent<WelcomeProps> = () => {
   const [startAnimation, setStartAnimation] = useState(false);
