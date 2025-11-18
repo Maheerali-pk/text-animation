@@ -11,7 +11,7 @@ const Welcome: FunctionComponent<WelcomeProps> = () => {
     if (clickedOnce) {
       setTimeout(() => {
         redirect("/home");
-      }, 750 * 6);
+      }, 750 * 9);
     }
   }, [clickedOnce]);
   useEffect(() => {

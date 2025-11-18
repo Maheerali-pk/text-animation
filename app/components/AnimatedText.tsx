@@ -143,18 +143,22 @@ function TextLine({
   };
 
   // Determine if colors should be used based on cycle
+  // cycle === -1: Initial construction (non-colored)
   // Even cycles (0, 2, 4...): colors during reconstruction, no colors during destruction
   // Odd cycles (1, 3, 5...): colors during destruction, no colors during reconstruction
+  const isInitialConstruction = cycle === -1;
   const shouldUseColorsInDestruction = cycle % 2 === 1;
   const shouldUseColorsInReconstruction = cycle % 2 === 0;
 
   // Use colored rendering based on phase and cycle
   // Include "idle" phase when colors should be used during destruction to prevent black flash
+  // Initial construction (cycle === -1) is always non-colored
   const shouldUseColoredRendering =
-    ((phase === "reappearing" || phase === "reconstructed") &&
+    !isInitialConstruction &&
+    (((phase === "reappearing" || phase === "reconstructed") &&
       shouldUseColorsInReconstruction) ||
-    ((phase === "idle" || phase === "scrambling" || phase === "scrambled") &&
-      shouldUseColorsInDestruction);
+      ((phase === "idle" || phase === "scrambling" || phase === "scrambled") &&
+        shouldUseColorsInDestruction));
 
   // Update colored segments when state changes
   // This ensures colored segments are always in sync with the current state
@@ -162,6 +166,12 @@ function TextLine({
   // Including displayText causes flicker when destruction starts due to redundant updates
   // Use useLayoutEffect to update synchronously before paint to prevent flicker
   useLayoutEffect(() => {
+    // Initial construction is always non-colored
+    if (isInitialConstruction) {
+      setColoredSegments([]);
+      return;
+    }
+
     // During reconstruction, always update colored segments if colors should be used
     if (phase === "reappearing" || phase === "reconstructed") {
       if (shouldUseColorsInReconstruction) {
@@ -207,6 +217,7 @@ function TextLine({
     phase,
     lineItems,
     cycle,
+    isInitialConstruction,
     shouldUseColorsInDestruction,
     shouldUseColorsInReconstruction,
   ]);
@@ -218,262 +229,355 @@ function TextLine({
     charsThatScrambledRef.current.clear();
     charsThatDisappearedRef.current.clear();
 
-    // Set initial colored segments if colors should be used during destruction
-    // This prevents the black flash before destruction starts
-    // The useLayoutEffect will handle updates when phase changes
-    if (shouldUseColorsInDestruction) {
-      const initialSegments = buildColoredDisplayText(
-        scrambledCharsRef.current,
-        hiddenCharsRef.current
-      );
-      setColoredSegments(initialSegments);
-    } else {
-      setColoredSegments([]);
-    }
-
-    // Set phase and displayText after colored segments are set
-    setPhase("idle");
-    setDisplayText(text);
-
-    // Clear any existing timers
-    charTimerRefs.current.forEach((timer) => clearTimeout(timer));
-    charTimerRefs.current = [];
-
-    // Reappearing animation function
-    const startReappearingAnimation = (calledAtTime: number) => {
-      // Calculate how long to wait from now until the global reconstruction start time
-      const waitTime = Math.max(0, reconstructionStartDelay - calledAtTime);
-
-      // Filter to only non-empty characters
+    // Handle initial construction (cycle === -1)
+    if (isInitialConstruction) {
+      // Start with all characters hidden
       const nonEmptyIndices = chars
         .map((char, i) => ({ char, i }))
         .filter(({ char }) => char.trim().length > 0)
         .map(({ i }) => i);
-
-      // Start with all characters hidden
       const allCharsHidden = new Set(nonEmptyIndices);
       hiddenCharsRef.current = allCharsHidden;
-      scrambledCharsRef.current.clear();
+      setColoredSegments([]);
       setPhase("reappearing");
       setDisplayText(buildDisplayText(new Map(), allCharsHidden));
 
-      // Split characters: Only 15% will show as random placeholder characters first, rest appear directly
-      // Randomly select 15% of non-empty characters to show as scrambled placeholders
-      const placeholderPercentage = 0.15; // 15% of characters
-      const placeholderCount = Math.floor(
-        nonEmptyIndices.length * placeholderPercentage
-      );
-      const shuffledIndices = [...nonEmptyIndices].sort(
-        () => Math.random() - 0.5
-      );
-      const charsToScrambleFirst = shuffledIndices.slice(0, placeholderCount);
-      const charsToAppearDirectly = shuffledIndices.slice(placeholderCount);
-
-      // Phase 1: Show 15% as scrambled characters very early (100ms before reconstruction starts)
-      const phase1EarlyDelay = -100; // Show random chars 100ms before reconstruction starts
-      const phase1Timer = setTimeout(() => {
-        // Batch all updates: remove from hidden and add to scrambled
-        charsToScrambleFirst.forEach((charIndex) => {
-          hiddenCharsRef.current.delete(charIndex);
-          scrambledCharsRef.current.set(charIndex, randomChar());
-        });
-        // Single state update for entire line
-        const newText = buildDisplayText(
-          scrambledCharsRef.current,
-          hiddenCharsRef.current
+      // Start initial construction animation
+      const startInitialConstruction = () => {
+        // Split characters: Only 15% will show as random placeholder characters first, rest appear directly
+        const placeholderPercentage = 0.15;
+        const placeholderCount = Math.floor(
+          nonEmptyIndices.length * placeholderPercentage
         );
-        setDisplayText(newText);
-        // Update colored segments if needed
-        if (shouldUseColorsInReconstruction) {
-          const segments = buildColoredDisplayText(
-            scrambledCharsRef.current,
-            hiddenCharsRef.current
-          );
-          setColoredSegments(segments);
-        } else {
-          setColoredSegments([]);
-        }
-      }, Math.max(0, waitTime + phase1EarlyDelay)); // Ensure non-negative
-
-      charTimerRefs.current.push(phase1Timer);
-
-      // Phase 2: Change scrambled characters to original (after brief delay)
-      const phase2Delay = 100; // Shorter delay to show scrambled text
-      const phase2Timer = setTimeout(() => {
-        // Batch all updates: remove from scrambled
-        charsToScrambleFirst.forEach((charIndex) => {
-          scrambledCharsRef.current.delete(charIndex);
-        });
-        // Single state update for entire line
-        const newText = buildDisplayText(
-          scrambledCharsRef.current,
-          hiddenCharsRef.current
+        const shuffledIndices = [...nonEmptyIndices].sort(
+          () => Math.random() - 0.5
         );
-        setDisplayText(newText);
-        // Update colored segments if needed
-        if (shouldUseColorsInReconstruction) {
-          const segments = buildColoredDisplayText(
-            scrambledCharsRef.current,
-            hiddenCharsRef.current
-          );
-          setColoredSegments(segments);
-        } else {
-          setColoredSegments([]);
-        }
-      }, waitTime + phase2Delay);
+        const charsToScrambleFirst = shuffledIndices.slice(0, placeholderCount);
+        const charsToAppearDirectly = shuffledIndices.slice(placeholderCount);
 
-      charTimerRefs.current.push(phase2Timer);
-
-      // Phase 3: Show remaining 85% as original directly
-      const phase3Delay = phase2Delay + 60; // Smaller gap
-      const phase3Timer = setTimeout(() => {
-        // Batch all updates: remove from hidden
-        charsToAppearDirectly.forEach((charIndex) => {
-          hiddenCharsRef.current.delete(charIndex);
-        });
-        // Single state update for entire line
-        const newText = buildDisplayText(
-          scrambledCharsRef.current,
-          hiddenCharsRef.current
-        );
-        setDisplayText(newText);
-        // Update colored segments if needed
-        if (shouldUseColorsInReconstruction) {
-          const segments = buildColoredDisplayText(
-            scrambledCharsRef.current,
-            hiddenCharsRef.current
-          );
-          setColoredSegments(segments);
-        } else {
-          setColoredSegments([]);
-        }
-        setPhase("reconstructed");
-        // Notify parent that reconstruction is complete
-        if (onReconstructionComplete) {
-          onReconstructionComplete();
-        }
-      }, waitTime + phase3Delay);
-
-      charTimerRefs.current.push(phase3Timer);
-    };
-
-    // Delay the start of this line's animation
-    startTimeoutRef.current = setTimeout(() => {
-      // Filter to only non-empty characters (exclude spaces, tabs, etc.)
-      const nonEmptyIndices = chars
-        .map((char, i) => ({ char, i }))
-        .filter(({ char }) => char.trim().length > 0)
-        .map(({ i }) => i);
-
-      // Determine which 70% will disappear immediately (randomly selected, no scramble, no morph)
-      const charsToHide = new Set<number>();
-      const totalNonEmpty = nonEmptyIndices.length;
-      const hideCount = Math.floor(totalNonEmpty * 0.7);
-      const indices = [...nonEmptyIndices]; // Copy array
-
-      // Shuffle and select random indices to hide (only from non-empty characters)
-      for (let i = 0; i < hideCount; i++) {
-        const randomIndex = Math.floor(Math.random() * indices.length);
-        charsToHide.add(indices.splice(randomIndex, 1)[0]);
-      }
-
-      hiddenCharsRef.current = charsToHide;
-
-      // Store which characters will scramble vs disappear for reconstruction
-      charsThatDisappearedRef.current = new Set(charsToHide);
-      charsThatScrambledRef.current.clear();
-
-      // Update display immediately with hidden characters
-      const initialText = buildDisplayText(
-        scrambledCharsRef.current,
-        charsToHide
-      );
-
-      // Update state - useLayoutEffect will handle coloredSegments update synchronously
-      // This ensures a single update path and prevents flicker
-      setDisplayText(initialText);
-      setPhase("scrambling");
-
-      // Phase 1: Scramble remaining characters one by one (70% disappear immediately, 30% scramble character-by-character)
-      // After the loop, 'indices' contains only the indices that were NOT selected to hide (and are non-empty)
-      const charsToScramble = indices;
-
-      // Ease-out function: starts fast, ends slow
-      const easeOut = (t: number): number => {
-        return 1 - Math.pow(1 - t, 3); // Cubic ease-out
-      };
-
-      // Calculate total duration for scrambling (based on character count)
-      const totalDuration = charsToScramble.length * charDelay * 3; // Base duration
-
-      charsToScramble.forEach((charIndex, index) => {
-        // Calculate progress from 0 to 1
-        const progress =
-          charsToScramble.length > 1 ? index / (charsToScramble.length - 1) : 0;
-        // Apply ease-out function
-        const easedProgress = easeOut(progress);
-        // Calculate delay based on eased progress, with minimum delay for first character
-        const delay = Math.max(charDelay, easedProgress * totalDuration);
-
-        const timer = setTimeout(() => {
-          // Update scrambled character
-          scrambledCharsRef.current.set(charIndex, randomChar());
-          // Track that this character was scrambled (for reconstruction)
-          charsThatScrambledRef.current.add(charIndex);
-          // Update display text
+        // Phase 1: Show 15% as scrambled characters
+        const phase1Timer = setTimeout(() => {
+          charsToScrambleFirst.forEach((charIndex) => {
+            hiddenCharsRef.current.delete(charIndex);
+            scrambledCharsRef.current.set(charIndex, randomChar());
+          });
           const newText = buildDisplayText(
             scrambledCharsRef.current,
             hiddenCharsRef.current
           );
-          // Update colored segments if needed during destruction (before setDisplayText to ensure they update together)
-          if (shouldUseColorsInDestruction) {
+          setDisplayText(newText);
+          setColoredSegments([]); // Non-colored during initial construction
+        }, 100);
+
+        charTimerRefs.current.push(phase1Timer);
+
+        // Phase 2: Change scrambled characters to original
+        const phase2Timer = setTimeout(() => {
+          charsToScrambleFirst.forEach((charIndex) => {
+            scrambledCharsRef.current.delete(charIndex);
+          });
+          const newText = buildDisplayText(
+            scrambledCharsRef.current,
+            hiddenCharsRef.current
+          );
+          setDisplayText(newText);
+          setColoredSegments([]);
+        }, 200);
+
+        charTimerRefs.current.push(phase2Timer);
+
+        // Phase 3: Show remaining 85% as original directly
+        const phase3Timer = setTimeout(() => {
+          charsToAppearDirectly.forEach((charIndex) => {
+            hiddenCharsRef.current.delete(charIndex);
+          });
+          const newText = buildDisplayText(
+            scrambledCharsRef.current,
+            hiddenCharsRef.current
+          );
+          setDisplayText(newText);
+          setColoredSegments([]);
+          setPhase("reconstructed");
+          // Notify parent that initial construction is complete
+          if (onReconstructionComplete) {
+            onReconstructionComplete();
+          }
+        }, 260);
+
+        charTimerRefs.current.push(phase3Timer);
+      };
+
+      // Start initial construction after a brief delay
+      startTimeoutRef.current = setTimeout(() => {
+        startInitialConstruction();
+      }, startDelay);
+
+      return () => {
+        if (startTimeoutRef.current) clearTimeout(startTimeoutRef.current);
+        charTimerRefs.current.forEach((timer) => clearTimeout(timer));
+        charTimerRefs.current = [];
+      };
+    } else {
+      // Normal cycle: destruction and reconstruction
+      // Set initial colored segments if colors should be used during destruction
+      // This prevents the black flash before destruction starts
+      // The useLayoutEffect will handle updates when phase changes
+      if (shouldUseColorsInDestruction) {
+        const initialSegments = buildColoredDisplayText(
+          scrambledCharsRef.current,
+          hiddenCharsRef.current
+        );
+        setColoredSegments(initialSegments);
+      } else {
+        setColoredSegments([]);
+      }
+
+      // Set phase and displayText after colored segments are set
+      setPhase("idle");
+      setDisplayText(text);
+
+      // Clear any existing timers
+      charTimerRefs.current.forEach((timer) => clearTimeout(timer));
+      charTimerRefs.current = [];
+
+      // Reappearing animation function
+      const startReappearingAnimation = (calledAtTime: number) => {
+        // Calculate how long to wait from now until the global reconstruction start time
+        const waitTime = Math.max(0, reconstructionStartDelay - calledAtTime);
+
+        // Filter to only non-empty characters
+        const nonEmptyIndices = chars
+          .map((char, i) => ({ char, i }))
+          .filter(({ char }) => char.trim().length > 0)
+          .map(({ i }) => i);
+
+        // Start with all characters hidden
+        const allCharsHidden = new Set(nonEmptyIndices);
+        hiddenCharsRef.current = allCharsHidden;
+        scrambledCharsRef.current.clear();
+        setPhase("reappearing");
+        setDisplayText(buildDisplayText(new Map(), allCharsHidden));
+
+        // Split characters: Only 15% will show as random placeholder characters first, rest appear directly
+        // Randomly select 15% of non-empty characters to show as scrambled placeholders
+        const placeholderPercentage = 0.15; // 15% of characters
+        const placeholderCount = Math.floor(
+          nonEmptyIndices.length * placeholderPercentage
+        );
+        const shuffledIndices = [...nonEmptyIndices].sort(
+          () => Math.random() - 0.5
+        );
+        const charsToScrambleFirst = shuffledIndices.slice(0, placeholderCount);
+        const charsToAppearDirectly = shuffledIndices.slice(placeholderCount);
+
+        // Phase 1: Show 15% as scrambled characters very early (100ms before reconstruction starts)
+        const phase1EarlyDelay = -100; // Show random chars 100ms before reconstruction starts
+        const phase1Timer = setTimeout(() => {
+          // Batch all updates: remove from hidden and add to scrambled
+          charsToScrambleFirst.forEach((charIndex) => {
+            hiddenCharsRef.current.delete(charIndex);
+            scrambledCharsRef.current.set(charIndex, randomChar());
+          });
+          // Single state update for entire line
+          const newText = buildDisplayText(
+            scrambledCharsRef.current,
+            hiddenCharsRef.current
+          );
+          setDisplayText(newText);
+          // Update colored segments if needed
+          if (shouldUseColorsInReconstruction) {
             const segments = buildColoredDisplayText(
               scrambledCharsRef.current,
               hiddenCharsRef.current
             );
-            // Use React's batching to update both states together
             setColoredSegments(segments);
-            setDisplayText(newText);
           } else {
             setColoredSegments([]);
-            setDisplayText(newText);
           }
+        }, Math.max(0, waitTime + phase1EarlyDelay)); // Ensure non-negative
 
-          // If this is the last character to scramble, hide immediately
-          if (index === charsToScramble.length - 1) {
-            // Ensure colored segments are still set before phase change
+        charTimerRefs.current.push(phase1Timer);
+
+        // Phase 2: Change scrambled characters to original (after brief delay)
+        const phase2Delay = 100; // Shorter delay to show scrambled text
+        const phase2Timer = setTimeout(() => {
+          // Batch all updates: remove from scrambled
+          charsToScrambleFirst.forEach((charIndex) => {
+            scrambledCharsRef.current.delete(charIndex);
+          });
+          // Single state update for entire line
+          const newText = buildDisplayText(
+            scrambledCharsRef.current,
+            hiddenCharsRef.current
+          );
+          setDisplayText(newText);
+          // Update colored segments if needed
+          if (shouldUseColorsInReconstruction) {
+            const segments = buildColoredDisplayText(
+              scrambledCharsRef.current,
+              hiddenCharsRef.current
+            );
+            setColoredSegments(segments);
+          } else {
+            setColoredSegments([]);
+          }
+        }, waitTime + phase2Delay);
+
+        charTimerRefs.current.push(phase2Timer);
+
+        // Phase 3: Show remaining 85% as original directly
+        const phase3Delay = phase2Delay + 60; // Smaller gap
+        const phase3Timer = setTimeout(() => {
+          // Batch all updates: remove from hidden
+          charsToAppearDirectly.forEach((charIndex) => {
+            hiddenCharsRef.current.delete(charIndex);
+          });
+          // Single state update for entire line
+          const newText = buildDisplayText(
+            scrambledCharsRef.current,
+            hiddenCharsRef.current
+          );
+          setDisplayText(newText);
+          // Update colored segments if needed
+          if (shouldUseColorsInReconstruction) {
+            const segments = buildColoredDisplayText(
+              scrambledCharsRef.current,
+              hiddenCharsRef.current
+            );
+            setColoredSegments(segments);
+          } else {
+            setColoredSegments([]);
+          }
+          setPhase("reconstructed");
+          // Notify parent that reconstruction is complete
+          if (onReconstructionComplete) {
+            onReconstructionComplete();
+          }
+        }, waitTime + phase3Delay);
+
+        charTimerRefs.current.push(phase3Timer);
+      };
+
+      // Delay the start of this line's animation
+      startTimeoutRef.current = setTimeout(() => {
+        // Filter to only non-empty characters (exclude spaces, tabs, etc.)
+        const nonEmptyIndices = chars
+          .map((char, i) => ({ char, i }))
+          .filter(({ char }) => char.trim().length > 0)
+          .map(({ i }) => i);
+
+        // Determine which 70% will disappear immediately (randomly selected, no scramble, no morph)
+        const charsToHide = new Set<number>();
+        const totalNonEmpty = nonEmptyIndices.length;
+        const hideCount = Math.floor(totalNonEmpty * 0.7);
+        const indices = [...nonEmptyIndices]; // Copy array
+
+        // Shuffle and select random indices to hide (only from non-empty characters)
+        for (let i = 0; i < hideCount; i++) {
+          const randomIndex = Math.floor(Math.random() * indices.length);
+          charsToHide.add(indices.splice(randomIndex, 1)[0]);
+        }
+
+        hiddenCharsRef.current = charsToHide;
+
+        // Store which characters will scramble vs disappear for reconstruction
+        charsThatDisappearedRef.current = new Set(charsToHide);
+        charsThatScrambledRef.current.clear();
+
+        // Update display immediately with hidden characters
+        const initialText = buildDisplayText(
+          scrambledCharsRef.current,
+          charsToHide
+        );
+
+        // Update state - useLayoutEffect will handle coloredSegments update synchronously
+        // This ensures a single update path and prevents flicker
+        setDisplayText(initialText);
+        setPhase("scrambling");
+
+        // Phase 1: Scramble remaining characters one by one (70% disappear immediately, 30% scramble character-by-character)
+        // After the loop, 'indices' contains only the indices that were NOT selected to hide (and are non-empty)
+        const charsToScramble = indices;
+
+        // Ease-out function: starts fast, ends slow
+        const easeOut = (t: number): number => {
+          return 1 - Math.pow(1 - t, 3); // Cubic ease-out
+        };
+
+        // Calculate total duration for scrambling (based on character count)
+        const totalDuration = charsToScramble.length * charDelay * 3; // Base duration
+
+        charsToScramble.forEach((charIndex, index) => {
+          // Calculate progress from 0 to 1
+          const progress =
+            charsToScramble.length > 1
+              ? index / (charsToScramble.length - 1)
+              : 0;
+          // Apply ease-out function
+          const easedProgress = easeOut(progress);
+          // Calculate delay based on eased progress, with minimum delay for first character
+          const delay = Math.max(charDelay, easedProgress * totalDuration);
+
+          const timer = setTimeout(() => {
+            // Update scrambled character
+            scrambledCharsRef.current.set(charIndex, randomChar());
+            // Track that this character was scrambled (for reconstruction)
+            charsThatScrambledRef.current.add(charIndex);
+            // Update display text
+            const newText = buildDisplayText(
+              scrambledCharsRef.current,
+              hiddenCharsRef.current
+            );
+            // Update colored segments if needed during destruction (before setDisplayText to ensure they update together)
             if (shouldUseColorsInDestruction) {
-              const finalSegments = buildColoredDisplayText(
+              const segments = buildColoredDisplayText(
                 scrambledCharsRef.current,
                 hiddenCharsRef.current
               );
-              setColoredSegments(finalSegments);
+              // Use React's batching to update both states together
+              setColoredSegments(segments);
+              setDisplayText(newText);
+            } else {
+              setColoredSegments([]);
+              setDisplayText(newText);
             }
-            setPhase("scrambled");
-            // Hide immediately after last character scrambles
-            setTimeout(() => {
-              setPhase("hidden");
-              // Schedule reconstruction to start at the calculated global time
-              const destructionCompleteTime = startDelay + delay + 10; // When this line's destruction completes
-              startReappearingAnimation(destructionCompleteTime);
-            }, 10); // Very short delay to show scrambled text briefly
-          }
-        }, delay);
 
-        charTimerRefs.current.push(timer);
-      });
+            // If this is the last character to scramble, hide immediately
+            if (index === charsToScramble.length - 1) {
+              // Ensure colored segments are still set before phase change
+              if (shouldUseColorsInDestruction) {
+                const finalSegments = buildColoredDisplayText(
+                  scrambledCharsRef.current,
+                  hiddenCharsRef.current
+                );
+                setColoredSegments(finalSegments);
+              }
+              setPhase("scrambled");
+              // Hide immediately after last character scrambles
+              setTimeout(() => {
+                setPhase("hidden");
+                // Schedule reconstruction to start at the calculated global time
+                const destructionCompleteTime = startDelay + delay + 10; // When this line's destruction completes
+                startReappearingAnimation(destructionCompleteTime);
+              }, 10); // Very short delay to show scrambled text briefly
+            }
+          }, delay);
 
-      // If no characters to scramble (all hidden), hide immediately
-      if (charsToScramble.length === 0) {
-        setPhase("scrambled");
-        phaseTimerRef.current = setTimeout(() => {
-          setPhase("hidden");
-          // Schedule reconstruction to start at the calculated global time
-          const destructionCompleteTime = startDelay + 10; // When this line's destruction completes
-          startReappearingAnimation(destructionCompleteTime);
-        }, 10);
-      }
-    }, startDelay);
+          charTimerRefs.current.push(timer);
+        });
+
+        // If no characters to scramble (all hidden), hide immediately
+        if (charsToScramble.length === 0) {
+          setPhase("scrambled");
+          phaseTimerRef.current = setTimeout(() => {
+            setPhase("hidden");
+            // Schedule reconstruction to start at the calculated global time
+            const destructionCompleteTime = startDelay + 10; // When this line's destruction completes
+            startReappearingAnimation(destructionCompleteTime);
+          }, 10);
+        }
+      }, startDelay);
+    }
 
     return () => {
       if (startTimeoutRef.current) clearTimeout(startTimeoutRef.current);
@@ -490,6 +594,7 @@ function TextLine({
     reconstructionStartDelay,
     cycle,
     onReconstructionComplete,
+    isInitialConstruction,
   ]);
 
   return (
@@ -524,9 +629,10 @@ export default function AnimatedText({
   scrambleDuration?: number;
   lineDelay?: number;
 }) {
-  const [cycle, setCycle] = useState<number>(0);
+  const [cycle, setCycle] = useState<number>(-1); // Start with -1 for initial construction
   const completedLinesRef = useRef<Set<number>>(new Set());
   const restartTimerRef = useRef<NodeJS.Timeout | null>(null);
+  const initialConstructionCompletedRef = useRef<boolean>(false);
 
   // Extract text from ILine[] structure - combine all lineItems into a single string per line
   const lines = text.map((line) =>
@@ -559,7 +665,12 @@ export default function AnimatedText({
   const baseReconstructionStart = lastLineStartDelay + maxDestructionDuration;
 
   // Calculate reconstruction delay per line (top to bottom, like destruction)
+  // For initial construction (cycle === -1), use simpler timing
   const calculateReconstructionDelay = (lineIndex: number) => {
+    if (cycle === -1) {
+      // Initial construction: simple cascading delay
+      return calculateDelay(lineIndex, lines.length);
+    }
     return baseReconstructionStart + calculateDelay(lineIndex, lines.length);
   };
 
@@ -586,15 +697,24 @@ export default function AnimatedText({
           restartTimerRef.current = null;
         }
 
-        // Restart after a brief delay
-        restartTimerRef.current = setTimeout(() => {
-          // Increment cycle to start next iteration
-          setCycle((prev) => prev + 1);
-          restartTimerRef.current = null;
-        }, 600); // Brief pause before restarting
+        // If this was initial construction (cycle === -1), transition to cycle 0
+        if (cycle === -1 && !initialConstructionCompletedRef.current) {
+          initialConstructionCompletedRef.current = true;
+          restartTimerRef.current = setTimeout(() => {
+            // Start cycle 0 (first destruction/reconstruction cycle)
+            setCycle(0);
+            restartTimerRef.current = null;
+          }, 600); // Brief pause before starting destruction
+        } else {
+          // Normal cycle: increment to next cycle
+          restartTimerRef.current = setTimeout(() => {
+            setCycle((prev) => prev + 1);
+            restartTimerRef.current = null;
+          }, 600); // Brief pause before restarting
+        }
       }
     },
-    [lines.length]
+    [lines.length, cycle]
   );
 
   // Cleanup on unmount
