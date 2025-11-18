@@ -3,6 +3,7 @@ import Navbar from "@/app/components/Navbar";
 import { FunctionComponent, useEffect, useState, useMemo } from "react";
 import { TypeAnimation } from "react-type-animation";
 import { motion } from "framer-motion";
+import CharactersWithAnimation from "@/app/components/CharactersWithAnimation";
 
 interface WelcomeProps {}
 const TypeAnimationTime = 1000;
@@ -57,89 +58,12 @@ const Home: FunctionComponent<WelcomeProps> = () => {
   return (
     <div className="w-screen h-screen flex items-center ">
       <div className="grid grid-cols-[10rem_auto_50vw] h-full w-full">
-        <div className="flex flex-col justify-between h-full">
-          <Navbar></Navbar>
-          <div
-            className="flex flex-col gap-4 relative h-full items-center justify-center"
-            style={{ perspective: "1000px" }}
-          >
-            {characters.map((char, index) => {
-              const anim = characterAnimations[index];
-              return (
-                <motion.div
-                  key={index}
-                  initial={{ opacity: 0, x: 0, y: 0, z: 0 }}
-                  animate={
-                    startAnimation
-                      ? {
-                          opacity: 1,
-                          x: anim.x,
-                          y: anim.y,
-                          z: anim.z,
-                          rotateX: anim.rotateX,
-                          rotateY: anim.rotateY,
-                          rotateZ: anim.rotateZ,
-                        }
-                      : { opacity: 0, x: 0, y: 0, z: 0 }
-                  }
-                  transition={{
-                    opacity: {
-                      duration: 0.5,
-                      delay: index * 0.2,
-                    },
-                    x: {
-                      duration: anim.duration,
-                      repeat: Infinity,
-                      ease: "easeInOut",
-                      delay: index * 0.2,
-                    },
-                    y: {
-                      duration: anim.duration,
-                      repeat: Infinity,
-                      ease: "easeInOut",
-                      delay: index * 0.2,
-                    },
-                    z: {
-                      duration: anim.duration,
-                      repeat: Infinity,
-                      ease: "easeInOut",
-                      delay: index * 0.2,
-                    },
-                    rotateX: {
-                      duration: anim.duration,
-                      repeat: Infinity,
-                      ease: "easeInOut",
-                      delay: index * 0.2,
-                    },
-                    rotateY: {
-                      duration: anim.duration,
-                      repeat: Infinity,
-                      ease: "easeInOut",
-                      delay: index * 0.2,
-                    },
-                    rotateZ: {
-                      duration: anim.duration,
-                      repeat: Infinity,
-                      ease: "easeInOut",
-                      delay: index * 0.2,
-                    },
-                  }}
-                  style={{
-                    fontSize: "40px",
-                    color: "#CBCFD8",
-                    position: "absolute",
-                    transformStyle: "preserve-3d",
-                    left: "50%",
-                    top: `${anim.baseTopPercent}%`,
-                    marginLeft: "-20px",
-                    marginTop: "-20px",
-                  }}
-                >
-                  {char}
-                </motion.div>
-              );
-            })}
-          </div>
+        <div className="flex flex-col justify-between gap-40 h-full">
+          <div></div>
+          <CharactersWithAnimation
+            characters={characters}
+            startAnimation={startAnimation}
+          />
         </div>
         <div className="flex w-full h-full items-center justify-center px-3">
           <TypeAnimation
@@ -153,7 +77,6 @@ const Home: FunctionComponent<WelcomeProps> = () => {
             speed={{ type: "keyStrokeDelayInMs", value: MsForEachCharacter }}
           ></TypeAnimation>
         </div>
-
         <div className="flex w-full h-full items-end justify-end px-3 py-4">
           <motion.svg
             width="814"
