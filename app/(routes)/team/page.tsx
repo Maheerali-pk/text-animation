@@ -88,8 +88,14 @@ const Team: FunctionComponent<TeamProps> = () => {
           >
             <motion.path
               initial={{ pathLength: 0 }}
-              animate={{ pathLength: 1 }}
-              transition={{ duration: 3, delay: 2 }}
+              animate={{ pathLength: [0, 1, 0] }}
+              transition={{
+                duration: 8.5,
+                delay: 2,
+                times: [0, 0.5, 1],
+                repeat: Infinity,
+                ease: "easeInOut",
+              }}
               d="M167 407C167 348.716 182.584 294.068 209.812 247H7V7H247V195.336C305.632 128.9 391.424 87 487 87C663.732 87 807 230.268 807 407C807 434.624 803.5 461.428 796.916 487H807V727H647V684.188C599.932 711.416 545.284 727 487 727"
               stroke="#5CAC3A"
               strokeWidth="14"
