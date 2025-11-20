@@ -56,7 +56,7 @@ const CharactersWithAnimation: React.FC<CharactersWithAnimationProps> = ({
   }, []);
   return (
     <div
-      className="flex flex-col gap-4 relative h-full items-center justify-center"
+      className="flex flex-col gap-4 relative h-full  items-center justify-center"
       style={{ perspective: "1000px" }}
     >
       {characterAnimations.map((char, index) => {
